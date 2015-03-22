@@ -1,0 +1,105 @@
+---
+title: "Practical Machine Learning - Project Write_Up"
+author: "Chi Ngo"
+date: "Tuesday, March 17, 2015"
+output: html_document
+---
+# Summary
+This is intended to recognize the quality of weight lifting exercises based on data provided by 4 sensors located on belt, arm, forearm and the dumbbell.
+
+
+
+```{r}
+## Loading Data
+library(caret)
+library(rpart)
+training <- read.csv("pml-training.csv")
+testing <- read.csv("pml-testing.csv") 
+ds <- training[, c(2, 6:10, 37:45, 46:49, 60:68, 84:86, 102, 113:121, 122:124, 140, 151:160)]
+ds2 <- training[, c(8:10, 37:45, 46:49, 60:68, 84:86, 102, 113:121, 122:124, 140, 151:160)]
+```
+# Machine Learning Algorithm
+The Regression Tree rpart is used in this classification problem. 
+The training dataset is simplified by keeping just 56 variables among the 160 variables of the original training dataset. This also eliminates all the NAs in the dataset.
+The list of 56 variables includes:
+- "classe": response
+- "user name": not considered
+- "new_window"
+- "num_window"
+- 52 features resulting from the sensors used for recognition the quality of actions during the exercises, namely:
+- good: "A"
+- bad: "B", "C", "D" and "E"
+
+- Data sets: Training dataset and Testing dataset
+- Testing data set does not include the responses
+
+### The "train" function of "caret" is used with rpart as a method with 10-fold cross validation.
+
+### Resampling will be repeated three times
+
+### Apply the classification model to the testing dataset. The accuracy achieved is 80%.
+
+### Pruning is applied by choosing the cp = 0.0168 to lower the number of splits to 14.
+
+
+```{r, echo=TRUE}
+set.seed(4699)
+cvCtrl <- trainControl(method="repeatedcv", repeats=3)
+fit <- train(classe ~ ., data=ds2, method="rpart", tuneLength=30, trControl=cvCtrl)
+pred <- predict(fit, newdata=testing)
+```
+### Special information: Window number
+#### For every window number, there is corresponding to only one response although there are several observations.
+#### Testing data set does not contain the response but it contains the window number that permits to get the corresponding outcome
+```{r, echo=TRUE}
+outcome <- vector()
+for (j in 1:nrow(testing)) {
+  sub <- subset(ds, num_window==testing[j,]$num_window, select=classe)
+  outcome[j] <- as.character(sub[1,])
+}
+outcome <- factor(outcome)
+```
+### Comparison of real outcome against Predicted - ConfusionMatrix
+```{r, echo=TRUE}
+results <- rbind(as.character(outcome), as.character(pred))
+rownames(results) <- c("Outcomes", "Predicted")
+results
+# Confusion Matrix
+confusionMatrix(pred, outcome)
+paste("Accuracy: 80%")
+```
+```{r, echo=TRUE}
+plot.train(fit)
+
+```
+
+Using printcp within RMarkdown will stop R while doing so in R still works.
+Extraction of the output of printcp(fit$finalModel)
+control = list(minsplit = 20, 
+    minbucket = 7, cp = 0, maxcompete = 4, maxsurrogate = 5, 
+    usesurrogate = 2, surrogatestyle = 0, maxdepth = 30, xval = 0))
+
+Root node error: 14042/19622 = 0.71563
+
+n= 19622 
+
+The nsplit = 45 with cp = 0.0029910. 
+To reduce the overfitting, it is decided to prune the rtree at the cp = 0.0168067 at the 14th split.  
+
+## Pruning to avoid overfitting
+## However, after pruning, the accuracy is just 45%
+``` {r, echo=TRUE, fig.height=16, fig.width=16}
+par(xpd = TRUE)
+fp <-prune(fit$finalModel, cp=0.0168)
+prunedPred <- predict(fp, newdata=testing)
+predpr <- array()
+for (i in 1:nrow(prunedPred)) {
+  predpr[i]<- names(which(prunedPred[i,]==max(prunedPred[i,])))
+}
+predpr <- factor(predpr)
+confusionMatrix(predpr, outcome)
+
+plot(fp, compress = TRUE, uniform=T, margin=.1, main="Pruned Tree at cp =0.0168",
+     lwd = 12)
+text(fp, use.n = TRUE, cex = 1.2)
+```
